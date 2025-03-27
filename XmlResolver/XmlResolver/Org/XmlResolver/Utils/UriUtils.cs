@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -304,6 +305,26 @@ namespace Org.XmlResolver.Utils {
             return GetStream(uri, Assembly.GetExecutingAssembly());
         }
 
+        private static ImmutableList<(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)> streamHandlers =
+        [
+            (uri => uri.StartsWith("file:/"), (string uri, Assembly asm) => _getFileStream(uri)),
+            (uri => uri.StartsWith("http:/") || uri.StartsWith("https:/"), (string uri, Assembly asm) => _getHttpStream(uri)),
+            (uri => uri.StartsWith("pack:/"), _getPackStream),
+            (uri => uri.StartsWith("data:"), (string uri, Assembly asm) => _getDataStream(uri)),
+        ];
+
+        /// <summary>
+        /// Registers a new StreamHandler für getting called in <see cref="GetStream(string, Assembly)"/>
+        /// </summary>
+        /// <param name="isRelevant">Callback for checking the scheme etc.</param>
+        /// <param name="getStream">Callback for retrieving the Stream</param>
+        public static void RegisterStreamHandler(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)
+        {
+            ArgumentNullException.ThrowIfNull(isRelevant);
+            ArgumentNullException.ThrowIfNull(isRelevant);
+            streamHandlers = streamHandlers.Insert(0, (isRelevant, getStream));
+        }
+
         /// <summary>
         /// Returns a stream for the given URI.
         /// </summary>
@@ -320,22 +341,12 @@ namespace Org.XmlResolver.Utils {
         /// <returns>The stream, or null if the stream could not be opened.</returns>
         /// <exception cref="ArgumentException">If the URI is not absolute or has an unsupported scheme.</exception>
         public static Stream GetStream(string uri, Assembly asm) {
-            if (uri.StartsWith("file:/")) {
-                return _getFileStream(uri);
+            foreach ((Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream) in streamHandlers)
+            {
+                if (isRelevant(uri))
+                    return getStream(uri, asm);
             }
-            
-            if (uri.StartsWith("http:/") || uri.StartsWith("https:/")) {
-                return _getHttpStream(uri);
-            } 
-            
-            if (uri.StartsWith("pack:/")) {
-                return _getPackStream(uri, asm);
-            }
-
-            if (uri.StartsWith("data:")) {
-                return _getDataStream(uri);
-            }
-
+  
             throw new ArgumentException("Unexpected URI scheme: " + uri);
         }
 
