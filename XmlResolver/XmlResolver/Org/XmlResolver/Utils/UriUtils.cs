@@ -314,15 +314,38 @@ namespace Org.XmlResolver.Utils {
         ];
 
         /// <summary>
+        /// Wrapper for removing the stream handler
+        /// </summary>
+        public readonly struct RegisteredStreamHandler : IDisposable
+        {
+            private readonly Func<string, bool> isRelevant;
+            private readonly Func<string, Assembly, Stream> getStream;
+
+            /// <inheritdoc/>
+            internal RegisteredStreamHandler(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)
+            {
+                this.isRelevant = isRelevant;
+                this.getStream = getStream;
+            }
+
+            /// <inheritdoc/>
+            public readonly void Dispose()
+            {
+                streamHandlers = streamHandlers.Remove((isRelevant, getStream));
+            }
+        }
+
+        /// <summary>
         /// Registers a new StreamHandler für getting called in <see cref="GetStream(string, Assembly)"/>
         /// </summary>
         /// <param name="isRelevant">Callback for checking the scheme etc.</param>
         /// <param name="getStream">Callback for retrieving the Stream</param>
-        public static void RegisterStreamHandler(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)
+        public static RegisteredStreamHandler RegisterStreamHandler(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)
         {
             ArgumentNullException.ThrowIfNull(isRelevant);
-            ArgumentNullException.ThrowIfNull(isRelevant);
+            ArgumentNullException.ThrowIfNull(getStream);
             streamHandlers = streamHandlers.Insert(0, (isRelevant, getStream));
+            return new(isRelevant, getStream);
         }
 
         /// <summary>
