@@ -305,6 +305,8 @@ namespace Org.XmlResolver.Utils {
             return GetStream(uri, Assembly.GetExecutingAssembly());
         }
 
+        private static readonly object streamHandlersLock = new object();
+
         private static ImmutableList<(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)> streamHandlers =
         [
             (uri => uri.StartsWith("file:/"), (string uri, Assembly asm) => _getFileStream(uri)),
@@ -331,12 +333,15 @@ namespace Org.XmlResolver.Utils {
             /// <inheritdoc/>
             public readonly void Dispose()
             {
-                streamHandlers = streamHandlers.Remove((isRelevant, getStream));
+                // Mutation of the global streamHandlers field must be synchronized, otherwise concurrent
+                // register/dispose calls lose updates (read-modify-write race).
+                lock (streamHandlersLock)
+                    streamHandlers = streamHandlers.Remove((isRelevant, getStream));
             }
         }
 
         /// <summary>
-        /// Registers a new StreamHandler für getting called in <see cref="GetStream(string, Assembly)"/>
+        /// Registers a new StreamHandler for getting called in <see cref="GetStream(string, Assembly)"/>
         /// </summary>
         /// <param name="isRelevant">Callback for checking the scheme etc.</param>
         /// <param name="getStream">Callback for retrieving the Stream</param>
@@ -344,7 +349,10 @@ namespace Org.XmlResolver.Utils {
         {
             ArgumentNullException.ThrowIfNull(isRelevant);
             ArgumentNullException.ThrowIfNull(getStream);
-            streamHandlers = streamHandlers.Insert(0, (isRelevant, getStream));
+            // Mutation of the global streamHandlers field must be synchronized, otherwise concurrent
+            // register/dispose calls lose updates (read-modify-write race), dropping handlers.
+            lock (streamHandlersLock)
+                streamHandlers = streamHandlers.Insert(0, (isRelevant, getStream));
             return new(isRelevant, getStream);
         }
 
@@ -364,7 +372,10 @@ namespace Org.XmlResolver.Utils {
         /// <returns>The stream, or null if the stream could not be opened.</returns>
         /// <exception cref="ArgumentException">If the URI is not absolute or has an unsupported scheme.</exception>
         public static Stream GetStream(string uri, Assembly asm) {
-            foreach ((Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream) in streamHandlers)
+            // Snapshot the (immutable) list so iteration sees one consistent version even if a
+            // concurrent register/dispose replaces the field mid-iteration.
+            ImmutableList<(Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream)> handlers = streamHandlers;
+            foreach ((Func<string, bool> isRelevant, Func<string, Assembly, Stream> getStream) in handlers)
             {
                 if (isRelevant(uri))
                     return getStream(uri, asm);
