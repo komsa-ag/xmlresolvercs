@@ -6,3 +6,4 @@
 *.DotSettings.user
 .DS_Store
 /**/.vs
+/Binaries/*
