@@ -184,7 +184,7 @@ namespace Org.XmlResolver {
             
             if (publicId) {
                 // The API doesn't expect null to be returned, but I'm not sure what else to do...
-                return null;
+                return null!;
             }
 
             return base.ResolveUri(baseUri, relativeUri);
